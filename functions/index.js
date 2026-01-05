@@ -114,7 +114,13 @@ exports.silentClientUpdateNotify = onDocumentUpdated(
 exports.silentClientDeleteNotify = onDocumentDeleted(
     "clients/{clientId}",
     async (event) => {
+      // Obtiene el id y la última información del cliente
+      const clientId = event.data.id;
       const oldData = event.data.data();
+
+      // Inicializa Firestore para hacer consultas
+      const db = admin.firestore();
+
       // Obtiene el token del dispositivo
       const token = oldData.fcm_token;
 
@@ -139,6 +145,29 @@ exports.silentClientDeleteNotify = onDocumentDeleted(
           console.log("Notificación silenciosa enviada a: ", token);
         } catch (error) {
           console.error("Error enviando FCM a : " + token + ". " + error);
+        }
+
+        try {
+          // Busca todas las notificaciones que contengan este clientId
+          const snapshot = await db.collection("notifications")
+              .where("clients_id", "array-contains", clientId)
+              .get();
+
+          if (!snapshot.empty) {
+            // Crea un array de promesas y las ejecuta en paralelo
+            const updatePromises = snapshot.docs.map((doc) => {
+              return doc.ref.update({
+                // Elimina el elemento solo si existe
+                clients_id: admin.firestore.FieldValue.arrayRemove(clientId),
+              });
+            });
+
+            // Espera a que todas las actualizaciones terminen
+            await Promise.all(updatePromises);
+            console.log("Cliente eliminado de las notificaciones.");
+          }
+        } catch (error) {
+          console.error(`Error eliminando cliente ${clientId}: `, error);
         }
       }
 
